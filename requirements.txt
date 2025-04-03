@@ -1,0 +1,4 @@
+opencv-python
+numpy
+pyQt5
+depthai
