@@ -55,35 +55,7 @@ class CVTeachingApp(QMainWindow):
         control_panel = QWidget()
         control_layout = QVBoxLayout()
         control_panel.setLayout(control_layout)
-        
-        # Threshold controls
-        threshold1_layout = QHBoxLayout()
-        threshold1_layout.addWidget(QLabel("Threshold 1:"))
-        self.threshold1_slider = QSlider(Qt.Horizontal)
-        self.threshold1_slider.setRange(0, 255)
-        self.threshold1_slider.setValue(self.threshold1)
-        self.threshold1_slider.valueChanged.connect(self.update_threshold1)
-        threshold1_layout.addWidget(self.threshold1_slider)
-        threshold1_layout.addWidget(QLabel(str(self.threshold1)))
-        self.threshold1_label = threshold1_layout.itemAt(2).widget()
-        control_layout.addLayout(threshold1_layout)
-        
-        threshold2_layout = QHBoxLayout()
-        threshold2_layout.addWidget(QLabel("Threshold 2:"))
-        self.threshold2_slider = QSlider(Qt.Horizontal)
-        self.threshold2_slider.setRange(0, 255)
-        self.threshold2_slider.setValue(self.threshold2)
-        self.threshold2_slider.valueChanged.connect(self.update_threshold2)
-        threshold2_layout.addWidget(self.threshold2_slider)
-        threshold2_layout.addWidget(QLabel(str(self.threshold2)))
-        self.threshold2_label = threshold2_layout.itemAt(2).widget()
-        control_layout.addLayout(threshold2_layout)
-        
-        # Apply button
-        self.apply_button = QPushButton("Apply Canny Edge Detection")
-        self.apply_button.clicked.connect(self.apply_canny)
-        control_layout.addWidget(self.apply_button)
-        
+                
         main_layout.addWidget(control_panel)
     
     def register_parameter_window(self, window):
@@ -118,18 +90,42 @@ class CVTeachingApp(QMainWindow):
     
     def show_parameter_window(self, window_class):
         """Show or activate a parameter window"""
+        # Get the window title from the class
         title = window_class.__name__.replace("ParameterWindow", "").replace("Window", "")
         
+        # Check if window already exists
         if title in self.parameter_windows:
             self.parameter_windows[title].raise_()
             return
             
-        if self.image is None:
-            QMessageBox.warning(self, "No Image", "Please load an image first")
+        # Verify we have an image
+        if self.image is None and not self.camera_running:
+            QMessageBox.warning(self, "No Image", "Please load an image or start camera first")
             return
             
+        # Create and show the window
         window = window_class(self)
         window.show()
+        self.register_parameter_window(window)
+
+    def show_floating_parameter_window(self, window_class):
+        """Generic method to show any parameter window as floating"""
+        # Get the window title from the class name
+        title = window_class.__name__.replace("ParameterWindow", "").replace("Window", "")
+        
+        # Check if window already exists
+        if title in self.parameter_windows:
+            self.parameter_windows[title].raise_()
+            return
+            
+        # Verify we have an image
+        if self.image is None and not self.camera_running:
+            QMessageBox.warning(self, "No Image", "Please load an image or start camera first")
+            return
+            
+        # Create and show the window
+        param_window = window_class(self)
+        param_window.show()
 
     def createMenuBars(self):
         # Create main menu bar
@@ -183,7 +179,8 @@ class CVTeachingApp(QMainWindow):
         grayscale_action.triggered.connect(self.convert_to_grayscale)
         color_menu.addAction(grayscale_action)
         
-        hsv_action = QAction('Adjust HSV', self)  # Changed from 'Convert to HSV'
+        hsv_action = QAction('Adjust HSV', self)
+        #hsv_action.triggered.connect(lambda: self.show_floating_parameter_window(HSVParameterWindow))
         hsv_action.triggered.connect(lambda: self.show_parameter_window(HSVParameterWindow))
         color_menu.addAction(hsv_action)
         
@@ -305,17 +302,21 @@ class CVTeachingApp(QMainWindow):
             self.display_image(self.image)
             
     def display_image(self, img):
-        # Convert the image to QImage
+        """Modified to store current output before changes"""
+        # Store previous image if we have a current output
+        if hasattr(self, 'current_output') and self.current_output is not None:
+            self.previous_output = self.current_output.copy()
+        
+        # Convert and display the image
         if len(img.shape) == 2:  # Grayscale
             q_img = QImage(img.data, img.shape[1], img.shape[0], 
-                          img.strides[0], QImage.Format_Grayscale8)
+                        img.strides[0], QImage.Format_Grayscale8)
         else:  # BGR
             rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb_img.shape
             bytes_per_line = ch * w
             q_img = QImage(rgb_img.data, w, h, bytes_per_line, QImage.Format_RGB888)
         
-        # Scale the image to fit the label while maintaining aspect ratio
         pixmap = QPixmap.fromImage(q_img)
         self.image_label.setPixmap(pixmap.scaled(
             self.image_label.width(), self.image_label.height(),
