@@ -11,6 +11,7 @@ from widgets.base_param import BaseParameterWindow
 from widgets.colour_param import HSVParameterWindow
 from widgets.denoise_param import DenoiseParameterWindow
 from widgets.morph_param import MorphologyParameterWindow
+from widgets.canny_param import CannyParameterWindow
 
 class CVTeachingApp(QMainWindow):
     def __init__(self):
@@ -163,7 +164,7 @@ class CVTeachingApp(QMainWindow):
         edge_menu = QMenu('Edge Detection', self)
         
         canny_action = QAction('Canny', self)
-        canny_action.triggered.connect(lambda: self.show_parameter_window(MorphologyParameterWindow))
+        canny_action.triggered.connect(lambda: self.show_parameter_window(CannyParameterWindow))
         edge_menu.addAction(canny_action)
         
         sobel_action = QAction('Sobel', self)
