@@ -1,4 +1,5 @@
 import sys
+import os
 import cv2
 import numpy as np
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout, 
@@ -12,6 +13,23 @@ from widgets.colour_param import HSVParameterWindow
 from widgets.denoise_param import DenoiseParameterWindow
 from widgets.morph_param import MorphologyParameterWindow
 from widgets.canny_param import CannyParameterWindow
+from widgets.gauss_blur_param import GaussianBlurParameterWindow
+from widgets.sobel_param import SobelParameterWindow
+from widgets.threshold_param import ThresholdParameterWindow
+from widgets.unsharp_mask_param import UnsharpMaskParameterWindow
+
+
+
+
+# Set Qt platform to xcb
+os.environ["QT_QPA_PLATFORM"] = "xcb"
+
+# Configure Qt plugin paths
+if sys.platform.startswith('linux'):
+    os.environ["QT_QPA_PLATFORM_PLUGIN_PATH"] = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        ".venv/lib/python3.12/site-packages/PyQt5/Qt5/plugins"
+    )
 
 class CVTeachingApp(QMainWindow):
     def __init__(self):
@@ -23,10 +41,10 @@ class CVTeachingApp(QMainWindow):
         self.image = None
         self.current_output = None
         self.current_output_path = ""
-        self.threshold1 = 50
-        self.threshold2 = 150
-        self.aperture_size = 3
-        self.l2_gradient = False
+        #self.threshold1 = 50
+        #self.threshold2 = 150
+        #self.aperture_size = 3
+        #self.l2_gradient = False
 
         self.camera = None
         self.camera_running = False
@@ -168,7 +186,7 @@ class CVTeachingApp(QMainWindow):
         edge_menu.addAction(canny_action)
         
         sobel_action = QAction('Sobel', self)
-        sobel_action.triggered.connect(lambda: self.apply_edge_detection('sobel'))
+        sobel_action.triggered.connect(lambda: self.show_parameter_window(SobelParameterWindow))
         edge_menu.addAction(sobel_action)
         
         tools_menu.addMenu(edge_menu)
@@ -186,11 +204,32 @@ class CVTeachingApp(QMainWindow):
         color_menu.addAction(hsv_action)
         
         tools_menu.addMenu(color_menu)
+
+        blur_menu = QMenu('Blur', self)
+        gaussian_action = QAction('Gaussian Blur', self)
+        gaussian_action.triggered.connect(lambda: self.show_parameter_window(GaussianBlurParameterWindow))
+        blur_menu.addAction(gaussian_action)
+
+        tools_menu.addMenu(blur_menu)
+
+        # edge enhancement
+        edge_enhance_menu = QMenu('Edge Enhancement', self)
+        unsharp_action = QAction('Unsharp Mask', self)
+        unsharp_action.triggered.connect(lambda: self.show_parameter_window(UnsharpMaskParameterWindow))
+        edge_enhance_menu.addAction(unsharp_action)
+        tools_menu.addMenu(edge_enhance_menu)
+
+
         
         # Denoise
         denoise_action = QAction('Denoise', self)
         denoise_action.triggered.connect(lambda: self.show_parameter_window(DenoiseParameterWindow))
         tools_menu.addAction(denoise_action)
+
+        # Threshold
+        threshold_action = QAction('Threshold', self)
+        threshold_action.triggered.connect(lambda: self.show_parameter_window(ThresholdParameterWindow))
+        tools_menu.addAction(threshold_action)
         
         # Morphology
         morph_action = QAction('Morphology', self)

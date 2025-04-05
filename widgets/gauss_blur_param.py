@@ -6,17 +6,16 @@ from PyQt5.QtCore import Qt
 from widgets.base_param import BaseParameterWindow
 import time
 
-class SobelParameterWindow(BaseParameterWindow):
+class GaussianBlurParameterWindow(BaseParameterWindow):
     def __init__(self, parent=None):
-        super().__init__(parent, "Sobel Filter")
+        # Call parent constructor first
+        super().__init__(parent, "Gaussian Blur")
         
         # Initialize parameters
         self.default_params = {
-            'dx': 1,
-            'dy': 1,
-            'ksize': 3,
-            'scale': 1,
-            'delta': 0,
+            'kernel_size': 5,
+            'sigma_x': 1.0,
+            'sigma_y': 1.0,
             'border_type': cv2.BORDER_DEFAULT
         }
         self.current_params = self.default_params.copy()
@@ -30,36 +29,27 @@ class SobelParameterWindow(BaseParameterWindow):
     
     def setup_ui(self):
         super().setup_ui()
-        self.setFixedSize(500, 350)
+        self.setFixedSize(500, 300)
         
         # Live preview checkbox
         self.preview_cb = QCheckBox("Live Preview")
         self.preview_cb.setChecked(True)
         self.controls_layout.addWidget(self.preview_cb)
         
-        # Derivative parameters
-        deriv_group = QGroupBox("Derivative Parameters")
-        deriv_layout = QVBoxLayout()
-        
-        self.dx_slider = self.create_slider("Derivative X:", 0, 2, self.default_params['dx'])
-        self.dy_slider = self.create_slider("Derivative Y:", 0, 2, self.default_params['dy'])
-        
-        deriv_layout.addLayout(self.dx_slider)
-        deriv_layout.addLayout(self.dy_slider)
-        deriv_group.setLayout(deriv_layout)
-        self.controls_layout.addWidget(deriv_group)
-        
         # Kernel parameters
         kernel_group = QGroupBox("Kernel Parameters")
         kernel_layout = QVBoxLayout()
         
-        self.ksize_slider = self.create_slider("Kernel Size:", 1, 7, self.default_params['ksize'], odd_only=True)
-        self.scale_slider = self.create_slider("Scale:", 1, 10, self.default_params['scale'])
-        self.delta_slider = self.create_slider("Delta:", 0, 255, self.default_params['delta'])
+        # Kernel size must be positive and odd
+        self.kernel_slider = self.create_slider("Kernel Size:", 1, 31, self.default_params['kernel_size'], odd_only=True)
         
-        kernel_layout.addLayout(self.ksize_slider)
-        kernel_layout.addLayout(self.scale_slider)
-        kernel_layout.addLayout(self.delta_slider)
+        # Sigma parameters
+        self.sigma_x_slider = self.create_slider("Sigma X:", 0.1, 10.0, self.default_params['sigma_x'], float_step=0.1)
+        self.sigma_y_slider = self.create_slider("Sigma Y:", 0.1, 10.0, self.default_params['sigma_y'], float_step=0.1)
+        
+        kernel_layout.addLayout(self.kernel_slider)
+        kernel_layout.addLayout(self.sigma_x_slider)
+        kernel_layout.addLayout(self.sigma_y_slider)
         kernel_group.setLayout(kernel_layout)
         self.controls_layout.addWidget(kernel_group)
         
@@ -85,6 +75,7 @@ class SobelParameterWindow(BaseParameterWindow):
         slider = QSlider(Qt.Horizontal)
         
         if float_step:
+            # For float values, we'll use integer slider and divide by 10
             slider.setRange(int(min_val * 10), int(max_val * 10))
             slider.setValue(int(default * 10))
             value_label = QLabel(f"{default:.1f}")
@@ -94,6 +85,7 @@ class SobelParameterWindow(BaseParameterWindow):
             value_label = QLabel(str(default))
             
         if odd_only:
+            # Force odd values by adjusting the slider steps
             slider.setSingleStep(2)
             slider.setPageStep(2)
         
@@ -143,11 +135,9 @@ class SobelParameterWindow(BaseParameterWindow):
     
     def reset_parameters(self):
         """Reset all parameters to their default values"""
-        self.dx_slider.itemAt(1).widget().setValue(self.default_params['dx'])
-        self.dy_slider.itemAt(1).widget().setValue(self.default_params['dy'])
-        self.ksize_slider.itemAt(1).widget().setValue(self.default_params['ksize'])
-        self.scale_slider.itemAt(1).widget().setValue(self.default_params['scale'])
-        self.delta_slider.itemAt(1).widget().setValue(self.default_params['delta'])
+        self.kernel_slider.itemAt(1).widget().setValue(self.default_params['kernel_size'])
+        self.sigma_x_slider.itemAt(1).widget().setValue(int(self.default_params['sigma_x'] * 10))
+        self.sigma_y_slider.itemAt(1).widget().setValue(int(self.default_params['sigma_y'] * 10))
         self.border_combo.setCurrentIndex(0)
         
         self.current_params = self.default_params.copy()
@@ -182,15 +172,12 @@ class SobelParameterWindow(BaseParameterWindow):
             return
             
         # Get current values
-        dx = self.dx_slider.itemAt(1).widget().value()
-        dy = self.dy_slider.itemAt(1).widget().value()
+        kernel_size = self.kernel_slider.itemAt(1).widget().value()
+        if hasattr(self.kernel_slider.itemAt(1).widget(), 'odd_only') and self.kernel_slider.itemAt(1).widget().odd_only:
+            kernel_size = max(1, kernel_size | 1)  # Ensure odd and >= 1
         
-        ksize = self.ksize_slider.itemAt(1).widget().value()
-        if hasattr(self.ksize_slider.itemAt(1).widget(), 'odd_only'):
-            ksize = max(1, ksize | 1)  # Ensure odd and >= 1
-        
-        scale = self.scale_slider.itemAt(1).widget().value()
-        delta = self.delta_slider.itemAt(1).widget().value()
+        sigma_x = self.sigma_x_slider.itemAt(1).widget().value() / 10.0
+        sigma_y = self.sigma_y_slider.itemAt(1).widget().value() / 10.0
         
         # Map border type selection to OpenCV constant
         border_map = {
@@ -203,42 +190,22 @@ class SobelParameterWindow(BaseParameterWindow):
         border_type = border_map.get(self.border_combo.currentIndex(), cv2.BORDER_DEFAULT)
         
         self.current_params = {
-            'dx': dx,
-            'dy': dy,
-            'ksize': ksize,
-            'scale': scale,
-            'delta': delta,
+            'kernel_size': kernel_size,
+            'sigma_x': sigma_x,
+            'sigma_y': sigma_y,
             'border_type': border_type
         }
         
-        # Convert to grayscale if needed
-        if len(self.parent.image.shape) == 3:
-            gray_img = cv2.cvtColor(self.parent.image, cv2.COLOR_BGR2GRAY)
-        else:
-            gray_img = self.parent.image
-        
-        # Apply Sobel filter
-        sobel = cv2.Sobel(
-            gray_img,
-            cv2.CV_64F,
-            dx=dx,
-            dy=dy,
-            ksize=ksize,
-            scale=scale,
-            delta=delta,
+        # Apply Gaussian blur
+        blurred = cv2.GaussianBlur(
+            self.parent.image,
+            (kernel_size, kernel_size),
+            sigmaX=sigma_x,
+            sigmaY=sigma_y,
             borderType=border_type
         )
         
-        # Convert to absolute value and scale to 0-255
-        sobel_abs = cv2.convertScaleAbs(sobel)
-        
-        # Convert to 3-channel image for display if needed
-        if len(self.parent.image.shape) == 3:
-            result = cv2.cvtColor(sobel_abs, cv2.COLOR_GRAY2BGR)
-        else:
-            result = sobel_abs
-        
         if preview_only:
-            self.parent.temp_display_image(result)
+            self.parent.temp_display_image(blurred)
         else:
-            self.parent.display_image(result)
+            self.parent.display_image(blurred)
