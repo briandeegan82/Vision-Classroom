@@ -6,9 +6,10 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QLabel, QVBoxLayout,
                             QHBoxLayout, QWidget, QSlider, QPushButton, 
                             QFileDialog, QAction, QToolBar, QMenu, QMessageBox)
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtCore import Qt
-from camera.oakd_lite_camera import OakDLiteCamera
-from widgets.base_param import BaseParameterWindow
+from PyQt5.QtCore import Qt, QTimer
+from camera.standard_camera import StandardCameraWidget, OakDLiteCameraWidget, StereoCameraWidget
+from widgets.brightness_contrast import BrightnessContrastWindow
+from widgets.histogram_param import HistogramEnhancementWindow
 from widgets.colour_param import HSVParameterWindow
 from widgets.denoise_param import DenoiseParameterWindow
 from widgets.morph_param import MorphologyParameterWindow
@@ -17,8 +18,8 @@ from widgets.gauss_blur_param import GaussianBlurParameterWindow
 from widgets.sobel_param import SobelParameterWindow
 from widgets.threshold_param import ThresholdParameterWindow
 from widgets.unsharp_mask_param import UnsharpMaskParameterWindow
-
-
+from widgets.laplacian_detect_param import LaplacianParameterWindow
+from widgets.laplacian_ee_param import LaplacianEnhancementWindow
 
 
 # Set Qt platform to xcb
@@ -50,9 +51,14 @@ class CVTeachingApp(QMainWindow):
         self.camera_running = False
         self.parameter_windows = {}
         self.temp_display = None
+        self.current_camera = None
+        self.camera_timer = QTimer(self)
+        self.camera_timer.timeout.connect(self.update_camera_frame)
         
         self.initUI()
         
+    # Fix in the CVTeachingApp class:
+
     def initUI(self):
         # Create central widget and layout
         central_widget = QWidget()
@@ -62,21 +68,37 @@ class CVTeachingApp(QMainWindow):
         central_widget.setLayout(main_layout)
         
         # Create menu bars
-        self.createMenuBars()
+        self.create_menu_bars()
+        
+        # Create a widget to contain both the image label and camera container
+        display_container = QWidget()
+        display_layout = QVBoxLayout()
+        display_container.setLayout(display_layout)
         
         # Image display
         self.image_label = QLabel()
         self.image_label.setAlignment(Qt.AlignCenter)
         self.image_label.setMinimumSize(640, 480)
-        main_layout.addWidget(self.image_label)
+        display_layout.addWidget(self.image_label)
         
-        # Control panel
+        # Camera container - add it to the display layout instead of main layout
+        self.camera_container = QWidget()
+        self.camera_layout = QVBoxLayout()
+        self.camera_container.setLayout(self.camera_layout)
+        display_layout.addWidget(self.camera_container)
+        
+        # Add the display container to the main layout
+        main_layout.addWidget(display_container, 1)  # Use stretch factor 1 to give it priority
+        
+        # Control panel - this will now appear below the display area
         control_panel = QWidget()
         control_layout = QVBoxLayout()
         control_panel.setLayout(control_layout)
-                
         main_layout.addWidget(control_panel)
-    
+        
+        # Initially hide the camera container
+        self.camera_container.hide()
+
     def register_parameter_window(self, window):
         """Track open parameter windows"""
         key = window.windowTitle()
@@ -146,7 +168,56 @@ class CVTeachingApp(QMainWindow):
         param_window = window_class(self)
         param_window.show()
 
-    def createMenuBars(self):
+    def show_camera_window(self, camera_class):
+        """Show camera stream in main window"""
+        if self.current_camera:
+            self.stop_camera_stream()
+        
+        self.current_camera = camera_class()
+        if not self.current_camera.start_stream():
+            QMessageBox.warning(self, "Error", "Could not start camera")
+            return
+        
+        # Clear previous camera widgets
+        while self.camera_layout.count():
+            child = self.camera_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
+        # Add ONLY the video label, NOT the controls layout
+        self.camera_layout.addWidget(self.current_camera.video_label)
+        
+        # Hide the image label when showing camera
+        self.image_label.hide()
+        self.camera_container.show()
+        self.camera_timer.start(30)  # Start frame updates
+
+    def stop_camera_stream(self):
+        """Stop the current camera stream and hide the camera container"""
+        if self.current_camera:
+            self.current_camera.stop_stream()
+            self.current_camera = None
+            self.camera_timer.stop()
+            self.camera_container.hide()
+            # Show the image label again when camera is stopped
+            self.image_label.show()
+
+    def update_camera_frame(self):
+        """Update the camera frame from the current camera"""
+        if self.current_camera:
+            frame = self.current_camera.get_frame()
+            if frame is not None:
+                self.current_camera.update_frame()
+
+    def stop_camera_stream(self):
+        """Stop the current camera stream and hide the camera container"""
+        if self.current_camera:
+            self.current_camera.stop_stream()
+            self.current_camera = None
+            self.camera_timer.stop()
+            self.camera_container.hide()
+
+    def create_menu_bars(self):
         # Create main menu bar
         menubar = self.menuBar()
         
@@ -177,6 +248,19 @@ class CVTeachingApp(QMainWindow):
         
         # --- Tools Menu ---
         tools_menu = menubar.addMenu('Tools')
+
+        # brightness and contrast
+        brightness_menu = QMenu('Brightness/Contrast', self)
+        brightness_action = QAction('Adjust Brightness/Contrast', self)
+        brightness_action.triggered.connect(lambda: self.show_parameter_window(BrightnessContrastWindow))
+        brightness_menu.addAction(brightness_action)
+        tools_menu.addMenu(brightness_menu)
+
+        # Histogram Equalization
+        histogram_action = QAction('Histogram', self)
+        histogram_action.triggered.connect(lambda: self.show_parameter_window(HistogramEnhancementWindow))
+        brightness_menu.addAction(histogram_action)
+        tools_menu.addMenu(brightness_menu)
         
         # Edge Detection Submenu
         edge_menu = QMenu('Edge Detection', self)
@@ -188,6 +272,11 @@ class CVTeachingApp(QMainWindow):
         sobel_action = QAction('Sobel', self)
         sobel_action.triggered.connect(lambda: self.show_parameter_window(SobelParameterWindow))
         edge_menu.addAction(sobel_action)
+
+        #laplacian
+        laplacian_action = QAction('Laplacian', self)
+        laplacian_action.triggered.connect(lambda: self.show_parameter_window(LaplacianParameterWindow))
+        edge_menu.addAction(laplacian_action)
         
         tools_menu.addMenu(edge_menu)
         
@@ -214,13 +303,19 @@ class CVTeachingApp(QMainWindow):
 
         # edge enhancement
         edge_enhance_menu = QMenu('Edge Enhancement', self)
+
+        # unsharp mask
         unsharp_action = QAction('Unsharp Mask', self)
         unsharp_action.triggered.connect(lambda: self.show_parameter_window(UnsharpMaskParameterWindow))
         edge_enhance_menu.addAction(unsharp_action)
         tools_menu.addMenu(edge_enhance_menu)
 
+        # Laplacian Enhancement
+        laplacian_enhance_action = QAction('Laplacian Enhancement', self)
+        laplacian_enhance_action.triggered.connect(lambda: self.show_parameter_window(LaplacianEnhancementWindow))
+        edge_enhance_menu.addAction(laplacian_enhance_action)
+        tools_menu.addMenu(edge_enhance_menu)
 
-        
         # Denoise
         denoise_action = QAction('Denoise', self)
         denoise_action.triggered.connect(lambda: self.show_parameter_window(DenoiseParameterWindow))
@@ -238,29 +333,26 @@ class CVTeachingApp(QMainWindow):
 
         # --- Camera Menu ---
         camera_menu = menubar.addMenu('Camera')
-
-        # Start/Stop Camera
-        self.camera_start_action = QAction('Start Camera', self)
-        self.camera_start_action.triggered.connect(self.start_camera_stream)
-        camera_menu.addAction(self.camera_start_action)
         
-        self.camera_stop_action = QAction('Stop Camera', self)
-        self.camera_stop_action.triggered.connect(self.stop_camera_stream)
-        self.camera_stop_action.setEnabled(False)
-        camera_menu.addAction(self.camera_stop_action)
+        # Camera Selection Submenu
+        camera_select_menu = QMenu('Select Camera', self)
         
-        # Camera Settings Submenu
-        settings_menu = QMenu('Settings', self)
+        standard_action = QAction('Standard Camera', self)
+        standard_action.triggered.connect(lambda: self.show_camera_window(StandardCameraWidget))
+        camera_select_menu.addAction(standard_action)
         
-        res_640 = QAction('640x480', self)
-        res_640.triggered.connect(lambda: self.set_camera_resolution((640, 480)))
-        settings_menu.addAction(res_640)
+        oakd_action = QAction('OAK-D Lite', self)
+        oakd_action.triggered.connect(lambda: self.show_camera_window(OakDLiteCameraWidget))
+        camera_select_menu.addAction(oakd_action)
         
-        res_720 = QAction('1280x720', self)
-        res_720.triggered.connect(lambda: self.set_camera_resolution((1280, 720)))
-        settings_menu.addAction(res_720)
+        stereo_action = QAction('Stereo Camera', self)
+        stereo_action.triggered.connect(lambda: self.show_camera_window(StereoCameraWidget))
+        camera_select_menu.addAction(stereo_action)
         
-        camera_menu.addMenu(settings_menu)
+        camera_menu.addMenu(camera_select_menu)
+        
+        # Track open camera windows
+        self.camera_windows = []
 
         # --- Help Menu ---
         help_menu = menubar.addMenu('Help')
@@ -268,68 +360,7 @@ class CVTeachingApp(QMainWindow):
         about_action = QAction('About', self)
         about_action.triggered.connect(self.show_about)
         help_menu.addAction(about_action)
-
-    def start_camera_stream(self):
-        """Initialize and start the camera stream."""
-        try:
-            if self.camera is None:
-                self.camera = OakDLiteCamera(preview_size=(640, 480), fps=30)
-            
-            self.camera.start_stream()
-            self.camera_running = True
-            self.camera_start_action.setEnabled(False)
-            self.camera_stop_action.setEnabled(True)
-            
-            # Start a timer to update the display
-            self.camera_timer = self.startTimer(30)  # ~30ms = ~30fps
-            
-            QMessageBox.information(self, "Camera", "Camera stream started successfully")
-        except Exception as e:
-            QMessageBox.critical(self, "Camera Error", f"Failed to start camera: {str(e)}")
-    
-    def stop_camera_stream(self):
-        """Stop the camera stream."""
-        if self.camera is not None:
-            self.camera.stop_stream()
-            self.camera_running = False
-            self.camera_start_action.setEnabled(True)
-            self.camera_stop_action.setEnabled(False)
-            self.killTimer(self.camera_timer)
-            
-            # Clear camera display if needed
-            if hasattr(self, 'camera_image'):
-                self.display_image(np.zeros((480, 640, 3), dtype=np.uint8))
-    
-    def timerEvent(self, event):
-        """Handle timer events for camera frame updates."""
-        if self.camera_running and self.camera is not None:
-            frame = self.camera.get_frame()
-            if frame is not None:
-                self.current_output = frame.copy()
-                self.display_image(frame)
-                
-                # If any processing is active, apply it
-                if hasattr(self, 'active_processing'):
-                    self.apply_active_processing(frame)
-
-    def set_camera_resolution(self, resolution):
-        """Change camera resolution."""
-        if self.camera_running:
-            self.stop_camera_stream()
         
-        self.camera = OakDLiteCamera(preview_size=resolution, fps=30)
-        
-        if self.camera_running:  # If was running, restart with new resolution
-            self.start_camera_stream()
-
-    def apply_active_processing(self, frame):
-        """Apply the currently selected processing to camera frames."""
-        # Example implementation - extend with your actual processing methods
-        if self.active_processing == 'canny':
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            processed = cv2.Canny(gray, self.threshold1, self.threshold2)
-            self.display_image(processed)
-
     def open_image(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, "Open Image", "", 
